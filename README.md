@@ -7,8 +7,8 @@
 
 | Ajuste | Valor |
 |---|---|
-| IP | `127.0.0.1` |
-| Puerto | `1884` |
+| IP | `192.168.0.108` |
+| Puerto | `1883` |
 | Protocolo | MQTT v3 |
 
 ---
@@ -115,7 +115,7 @@ El dashboard recibe el diseño del mapa de la ciudad como una cadena de códigos
 
 ## Lista de verificación para el equipo del robot
 
-- [ ] Conectarse al broker en `127.0.0.1:1884`
+- [ ] Conectarse al broker en `192.168.0.108:1883`
 - [ ] **Suscribirse** a `EquipoE/orders` (QoS 1) para recibir pedidos
 - [ ] **Publicar** en `robot/position` (QoS 0) en cada movimiento de celda: `{"row": F, "col": C}`
 - [ ] **Publicar** en `robot/order/status` (QoS 0) cuando cambie el estado del pedido
