@@ -10,33 +10,38 @@ import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 
-import java.util.LinkedList;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Queue;
 
 /**
- * Builds the dashboard UI and connects it to MQTT data.
+ * UI principal del dashboard (Clarence).
  *
  * Layout:
  *   ┌─────────────────────┬──────────────────┐
- *   │  MapCanvas (5×7)    │  Current order   │
- *   │                     │  Order queue     │
- *   │                     │  History         │
- *   │                     │  MQTT status     │
+ *   │  MapCanvas (5×7)    │  Pedido actual   │
+ *   │                     │  Gestion+Cola    │
+ *   │                     │  Historial       │
+ *   │                     │  Status semaforo │
  *   └─────────────────────┴──────────────────┘
- *   │  Status bar (MQTT / map string)         │
+ *   │  Barra de estado MQTT                   │
+ *
+ * Protocolo MQTT (Equipo E):
+ *   - SUB map                       -> dibujar mapa, inicializar tracker
+ *   - SUB Equipo E/odometry         -> recalcular posicion del robot
+ *   - SUB Equipo E/status           -> semaforo PEDIDO_RECIBIDO/RECOGIDO/LISTO
+ *   - PUB Equipo E/orders           -> {id, pickup:[r,c], delivery:[r,c]}
  */
 public class DashboardController {
 
     private static final int MAP_COLS = 5;
     private static final int MAP_ROWS = 7;
+    private static final int START_ROW = 6;
+    private static final int START_COL = 0;
 
-    // UI components
     private MapCanvas mapCanvas;
     private Label     lblCurrentOrder;
     private Label     lblPickup;
     private Label     lblDelivery;
-    private ProgressBar progressBar;
     private Label     lblProgress;
     private ListView<String> listQueue;
     private ListView<String> listHistory;
@@ -46,18 +51,25 @@ public class DashboardController {
     private ComboBox<String> cbPickup;
     private ComboBox<String> cbDelivery;
 
-    // Data
+    // Semaforo de status del robot
+    private Label dotPedidoRecibido;
+    private Label dotRecogido;
+    private Label dotListo;
+
     private CityMap currentMap;
-    private final Queue<Order> orderQueue = new LinkedList<>();
-    private Order activeOrder = null;
+    private RobotTracker tracker;
+
     private final ObservableList<String> queueItems   = FXCollections.observableArrayList();
     private final ObservableList<String> historyItems = FXCollections.observableArrayList();
 
-    // Services
+    // Pedidos pendientes en orden FIFO (en paralelo a queueItems para tener el id).
+    private final List<String> queuedIds = new ArrayList<>();
+    private String activeOrderId = null;
+
     private final MqttService mqtt = new MqttService();
 
     // ──────────────────────────────────────────────
-    //  UI construction
+    //  UI
     // ──────────────────────────────────────────────
 
     public BorderPane buildUI() {
@@ -65,22 +77,21 @@ public class DashboardController {
         root.setPadding(new Insets(12));
         root.setStyle("-fx-background-color: #f7f7f5;");
 
-        // Map canvas (left)
         mapCanvas = new MapCanvas(420, 588);
         VBox mapBox = new VBox(8, sectionLabel("Mapa de ciudad"), mapCanvas, buildLegend());
         mapBox.setPadding(new Insets(8));
         mapBox.setStyle("-fx-background-color: white; -fx-background-radius: 10; -fx-border-color: #e0e0e0; -fx-border-radius: 10;");
         root.setLeft(mapBox);
 
-        // Right panel
-        VBox right = new VBox(10, buildCurrentOrderPanel(), buildQueuePanel(), buildHistoryPanel(), buildMqttInfoPanel());
+        VBox right = new VBox(10, buildCurrentOrderPanel(), buildQueuePanel(),
+                              buildHistoryPanel(), buildStatusSemaphorePanel(),
+                              buildMqttInfoPanel());
         right.setPrefWidth(300);
         BorderPane.setMargin(right, new Insets(0, 0, 0, 10));
         root.setCenter(right);
 
-        // Status bar (bottom)
-        lblStatus   = new Label("Iniciando...");
-        lblMapRaw   = new Label("");
+        lblStatus = new Label("Iniciando...");
+        lblMapRaw = new Label("");
         lblMapRaw.setStyle("-fx-font-family: monospace; -fx-font-size: 10;");
         VBox statusBar = new VBox(2, lblStatus, lblMapRaw);
         statusBar.setPadding(new Insets(8, 0, 0, 0));
@@ -89,56 +100,37 @@ public class DashboardController {
         return root;
     }
 
-    // ──────────────────────────────────────────────
-    //  Panel builders
-    // ──────────────────────────────────────────────
-
     private VBox buildCurrentOrderPanel() {
         lblCurrentOrder = new Label("Sin pedido activo");
         lblCurrentOrder.setFont(Font.font("Arial", 13));
         lblCurrentOrder.setStyle("-fx-font-weight: bold;");
 
-        lblPickup   = new Label("Recogida: —");
-        lblDelivery = new Label("Entrega:  —");
+        lblPickup   = new Label("Recogida: --");
+        lblDelivery = new Label("Entrega:  --");
         lblPickup.setStyle("-fx-font-size: 12; -fx-text-fill: #555;");
         lblDelivery.setStyle("-fx-font-size: 12; -fx-text-fill: #555;");
 
-        progressBar = new ProgressBar(0);
-        progressBar.setMaxWidth(Double.MAX_VALUE);
-        progressBar.setStyle("-fx-accent: #185FA5;");
-
-        lblProgress = new Label("0%");
+        lblProgress = new Label("0 instrucciones completadas");
         lblProgress.setStyle("-fx-font-size: 11; -fx-text-fill: #777;");
 
-        VBox inner = new VBox(4, lblCurrentOrder, lblPickup, lblDelivery, progressBar, lblProgress);
+        VBox inner = new VBox(4, lblCurrentOrder, lblPickup, lblDelivery, lblProgress);
         inner.setPadding(new Insets(8));
         inner.setStyle("-fx-background-color: #f0f4f8; -fx-background-radius: 6;");
 
-        VBox panel = new VBox(6, sectionLabel("Pedido actual"), inner);
-        return wrapPanel(panel);
+        return wrapPanel(new VBox(6, sectionLabel("Pedido actual"), inner));
     }
 
     private VBox buildQueuePanel() {
-        // Pickup dropdowns
-        cbPickup = new ComboBox<>();
+        cbPickup   = new ComboBox<>();
         cbDelivery = new ComboBox<>();
         cbPickup.setPromptText("Punto de recogida");
         cbDelivery.setPromptText("Punto de entrega");
         cbPickup.setMaxWidth(Double.MAX_VALUE);
         cbDelivery.setMaxWidth(Double.MAX_VALUE);
 
-        // Populate with known pickup/delivery coords from spec
-//        java.util.List<String> points = java.util.List.of(
-//                "0,0", "0,1", "0,3", "3,0", "4,4",
-//                "5,0", "5,2", "6,0", "6,2", "6,4"
-//        );
-//        cbPickup.getItems().addAll(points);
-//        cbDelivery.getItems().addAll(points);
-
-        // Order counter
         final int[] orderCounter = {1};
 
-        Button btnAdd = new Button("Añadir pedido →");
+        Button btnAdd = new Button("Anadir pedido");
         btnAdd.setMaxWidth(Double.MAX_VALUE);
         btnAdd.setStyle("-fx-font-size: 12;");
 
@@ -164,18 +156,19 @@ public class DashboardController {
             String[] p = pickup.split(",");
             String[] d = delivery.split(",");
 
+            // Formato del guion: {"id":"ORD-xxx","pickup":[r,c],"delivery":[r,c]}
             String json = String.format(
-                    "{\"id\":\"%s\",\"pickupRow\":%s,\"pickupCol\":%s,\"deliveryRow\":%s,\"deliveryCol\":%s}",
-                    orderId, p[0], p[1], d[0], d[1]
-            );
+                    "{\"id\":\"%s\",\"pickup\":[%s,%s],\"delivery\":[%s,%s]}",
+                    orderId, p[0], p[1], d[0], d[1]);
 
             try {
                 mqtt.publish(MqttService.TOPIC_ORDERS, json);
-                queueItems.add(orderId + "  (" + pickup + ") → (" + delivery + ")");
+                queueItems.add(orderId + "  (" + pickup + ") -> (" + delivery + ")");
+                queuedIds.add(orderId);
                 cbPickup.setValue(null);
                 cbDelivery.setValue(null);
                 lblFormStatus.setStyle("-fx-font-size: 11; -fx-text-fill: #3B6D11;");
-                lblFormStatus.setText("Pedido " + orderId + " enviado ✓");
+                lblFormStatus.setText("Pedido " + orderId + " enviado");
             } catch (Exception ex) {
                 lblFormStatus.setStyle("-fx-font-size: 11; -fx-text-fill: #e24b4a;");
                 lblFormStatus.setText("Error al publicar: " + ex.getMessage());
@@ -187,7 +180,8 @@ public class DashboardController {
         listQueue.setPrefHeight(80);
         listQueue.setStyle("-fx-font-size: 12;");
 
-        return wrapPanel(new VBox(8, sectionLabel("Gestión de pedidos"), form, sectionLabel("Cola"), listQueue));
+        return wrapPanel(new VBox(8, sectionLabel("Gestion de pedidos"), form,
+                                  sectionLabel("Cola"), listQueue));
     }
 
     private VBox buildHistoryPanel() {
@@ -197,10 +191,20 @@ public class DashboardController {
         return wrapPanel(new VBox(6, sectionLabel("Historial"), listHistory));
     }
 
+    private VBox buildStatusSemaphorePanel() {
+        dotPedidoRecibido = statusDot("Pedido recibido");
+        dotRecogido       = statusDot("Recogido");
+        dotListo          = statusDot("Entregado");
+        resetSemaphore();
+
+        VBox dots = new VBox(4, dotPedidoRecibido, dotRecogido, dotListo);
+        return wrapPanel(new VBox(6, sectionLabel("Estado del robot"), dots));
+    }
+
     private VBox buildMqttInfoPanel() {
         lblMqttStatus = new Label("Desconectado");
         lblMqttStatus.setStyle("-fx-font-size: 11; -fx-text-fill: #888;");
-        Label info = new Label("localhost  |  topic: map");
+        Label info = new Label(MqttService.BROKER_URL + "  |  Equipo E");
         info.setStyle("-fx-font-size: 11; -fx-text-fill: #aaa;");
         return wrapPanel(new VBox(4, sectionLabel("MQTT"), lblMqttStatus, info));
     }
@@ -216,8 +220,8 @@ public class DashboardController {
         }));
 
         mqtt.setOnMapReceived(this::handleMapPayload);
-        mqtt.setOnPositionReceived(this::handlePositionPayload);
-        mqtt.setOnOrderReceived(this::handleOrderPayload);
+        mqtt.setOnOdometryReceived(this::handleOdometryPayload);
+        mqtt.setOnStatusReceived(this::handleStatusPayload);
 
         new Thread(() -> {
             try {
@@ -229,92 +233,138 @@ public class DashboardController {
     }
 
     // ──────────────────────────────────────────────
-    //  MQTT payload handlers  (called from MQTT thread → must use Platform.runLater)
+    //  Handlers MQTT (llegan en hilo MQTT -> Platform.runLater)
     // ──────────────────────────────────────────────
 
     private void handleMapPayload(String payload) {
-        System.out.println("Map received, length: " + payload.length() + " content: " + payload);
-        try {
-            CityMap map = new CityMap(payload, MAP_COLS, MAP_ROWS);
-            // ... rest
-        } catch (Exception e) {
-            System.out.println("PARSE ERROR: " + e.getMessage()); // ADD THIS
-            Platform.runLater(() -> lblStatus.setText("Error al parsear mapa: " + e.getMessage()));
-        }
+        System.out.println("Map received, length: " + payload.length());
         try {
             CityMap map = new CityMap(payload, MAP_COLS, MAP_ROWS);
             Platform.runLater(() -> {
                 currentMap = map;
                 mapCanvas.setMap(map);
-                lblMapRaw.setText("Map: " + payload.substring(0, Math.min(40, payload.length())) + "…");
-                lblStatus.setText("Mapa actualizado — " + map.getPickupPoints().size() + " puntos de recogida/entrega");
-                List<String> points = map.getPickupPoints().stream().map(p -> p[0] + "," + p[1]).collect(java.util.stream.Collectors.toList());
-                if (cbPickup != null) cbPickup.getItems().setAll(points);
+
+                // Inicializar tracker con la orientacion deducida del bloque (6,0).
+                Tile startTile = map.getTile(START_ROW, START_COL);
+                RobotTracker.Heading h0 = RobotTracker.initialHeading(startTile);
+                tracker = new RobotTracker(START_ROW, START_COL, h0);
+                mapCanvas.setRobotPosition(START_ROW, START_COL);
+
+                lblMapRaw.setText("Map: " + payload.substring(0, Math.min(40, payload.length())) + "...");
+                lblStatus.setText("Mapa actualizado - " + map.getPickupPoints().size()
+                        + " puntos. Robot mira " + h0 + " desde (" + START_ROW + "," + START_COL + ")");
+
+                // Rellenar combos con los puntos de recogida/entrega detectados.
+                List<String> points = new ArrayList<>();
+                for (int[] p : map.getPickupPoints()) {
+                    points.add(p[0] + "," + p[1]);
+                }
+                if (cbPickup != null)   cbPickup.getItems().setAll(points);
                 if (cbDelivery != null) cbDelivery.getItems().setAll(points);
             });
         } catch (Exception e) {
+            System.out.println("PARSE ERROR: " + e.getMessage());
             Platform.runLater(() -> lblStatus.setText("Error al parsear mapa: " + e.getMessage()));
         }
     }
 
-    /**
-     * Expects JSON like: {"row":2,"col":3}
-     * Simple manual parse to avoid needing a JSON library.
-     */
-    private void handlePositionPayload(String payload) {
+    /** Llega {"instructions":["MOVE","TURN_LEFT",...]} cada 1 s aprox. */
+    private void handleOdometryPayload(String payload) {
+        if (tracker == null) return;
         try {
-            int row = extractJsonInt(payload, "row");
-            int col = extractJsonInt(payload, "col");
-            Platform.runLater(() -> mapCanvas.setRobotPosition(row, col));
-        } catch (Exception e) {
-            Platform.runLater(() -> lblStatus.setText("Error posición: " + e.getMessage()));
-        }
-    }
-
-    /**
-     * Expects JSON like: {"id":"ORD-042","progress":0.6,"status":"IN_PROGRESS","pickupRow":0,"pickupCol":0,"deliveryRow":3,"deliveryCol":4}
-     */
-    private void handleOrderPayload(String payload) {
-        try {
-            String  id       = extractJsonString(payload, "id");
-            double  progress = extractJsonDouble(payload, "progress");
-            String  status   = extractJsonString(payload, "status");
-            int pRow = extractJsonInt(payload, "pickupRow");
-            int pCol = extractJsonInt(payload, "pickupCol");
-            int dRow = extractJsonInt(payload, "deliveryRow");
-            int dCol = extractJsonInt(payload, "deliveryCol");
-
+            List<String> done = parseInstructionsArray(payload);
             Platform.runLater(() -> {
-                lblCurrentOrder.setText("#" + id);
-                lblPickup.setText("Recogida: (" + pRow + "," + pCol + ")");
-                lblDelivery.setText("Entrega:  (" + dRow + "," + dCol + ")");
-                progressBar.setProgress(progress);
-                lblProgress.setText((int)(progress * 100) + "%");
+                tracker.applyCompleted(done);
+                mapCanvas.setRobotPosition(tracker.getRow(), tracker.getCol());
+                lblProgress.setText(done.size() + " instrucciones completadas ("
+                        + tracker.getHeading() + ")");
             });
         } catch (Exception e) {
-            Platform.runLater(() -> lblStatus.setText("Error pedido: " + e.getMessage()));
+            Platform.runLater(() -> lblStatus.setText("Error odometria: " + e.getMessage()));
+        }
+    }
+
+    /** Status: cadena "PEDIDO_RECIBIDO" | "RECOGIDO" | "LISTO" (con o sin comillas). */
+    private void handleStatusPayload(String payload) {
+        String raw = payload.trim();
+        // Aceptar tanto "LISTO" (string JSON) como LISTO (texto plano) como
+        // {"status":"LISTO"}
+        String estado;
+        if (raw.startsWith("{")) {
+            int kIdx = raw.indexOf("\"status\"");
+            if (kIdx < 0) return;
+            int q1 = raw.indexOf('"', raw.indexOf(':', kIdx) + 1);
+            int q2 = raw.indexOf('"', q1 + 1);
+            estado = raw.substring(q1 + 1, q2);
+        } else if (raw.startsWith("\"") && raw.endsWith("\"") && raw.length() >= 2) {
+            estado = raw.substring(1, raw.length() - 1);
+        } else {
+            estado = raw;
+        }
+        final String fin = estado;
+        Platform.runLater(() -> applyStatus(fin));
+    }
+
+    private void applyStatus(String estado) {
+        switch (estado) {
+            case "PEDIDO_RECIBIDO" -> {
+                // Empieza el pedido que estaba en cabeza de la cola.
+                if (!queuedIds.isEmpty()) {
+                    activeOrderId = queuedIds.remove(0);
+                    if (!queueItems.isEmpty()) queueItems.remove(0);
+                    lblCurrentOrder.setText("#" + activeOrderId);
+                }
+                resetSemaphore();
+                paintDotActive(dotPedidoRecibido, "#FFB300");
+                lblStatus.setText("Pedido " + activeOrderId + " en marcha");
+            }
+            case "RECOGIDO" -> {
+                paintDotActive(dotRecogido, "#1a5fa5");
+                lblStatus.setText("Paquete recogido");
+            }
+            case "LISTO" -> {
+                paintDotActive(dotListo, "#3B6D11");
+                if (activeOrderId != null) {
+                    historyItems.add(0, activeOrderId + "  ENTREGADO");
+                }
+                if (tracker != null) tracker.commitSnapshot();
+                lblStatus.setText("Pedido " + activeOrderId + " entregado");
+                activeOrderId = null;
+                lblCurrentOrder.setText("Sin pedido activo");
+                lblPickup.setText("Recogida: --");
+                lblDelivery.setText("Entrega:  --");
+                lblProgress.setText("0 instrucciones completadas");
+            }
+            default -> { /* desconocido, ignorar */ }
         }
     }
 
     // ──────────────────────────────────────────────
-    //  Order management (called from UI thread)
+    //  Parsing utils (sin librerias externas)
     // ──────────────────────────────────────────────
 
-    /** Add a new order to the queue and refresh list */
-    public void addOrder(Order order) {
-        orderQueue.add(order);
-        refreshQueueList();
-    }
-
-    private void refreshQueueList() {
-        queueItems.clear();
-        for (Order o : orderQueue) {
-            queueItems.add(o.getId() + "  " + o.getPickupLabel() + " → " + o.getDeliveryLabel());
+    /** Parsea {"instructions":["MOVE","TURN_LEFT",...]} y devuelve la lista. */
+    private static List<String> parseInstructionsArray(String json) {
+        List<String> out = new ArrayList<>();
+        int kIdx = json.indexOf("\"instructions\"");
+        if (kIdx < 0) return out;
+        int bracket = json.indexOf('[', kIdx);
+        int end = json.indexOf(']', bracket);
+        if (bracket < 0 || end < 0) return out;
+        String body = json.substring(bracket + 1, end).trim();
+        if (body.isEmpty()) return out;
+        for (String item : body.split(",")) {
+            String s = item.trim();
+            if (s.startsWith("\"") && s.endsWith("\"") && s.length() >= 2) {
+                s = s.substring(1, s.length() - 1);
+            }
+            if (!s.isEmpty()) out.add(s);
         }
+        return out;
     }
 
     // ──────────────────────────────────────────────
-    //  Helpers
+    //  UI helpers
     // ──────────────────────────────────────────────
 
     private static Label sectionLabel(String text) {
@@ -352,40 +402,24 @@ public class DashboardController {
         return h;
     }
 
-    // ──────────────────────────────────────────────
-    //  Minimal JSON field extractors (no extra lib)
-    // ──────────────────────────────────────────────
-
-    private static int extractJsonInt(String json, String key) {
-        String search = "\"" + key + "\"";
-        int idx = json.indexOf(search);
-        if (idx < 0) throw new IllegalArgumentException("Key not found: " + key);
-        int colon = json.indexOf(':', idx);
-        int start = colon + 1;
-        while (start < json.length() && (json.charAt(start) == ' ')) start++;
-        int end = start;
-        while (end < json.length() && (Character.isDigit(json.charAt(end)) || json.charAt(end) == '-')) end++;
-        return Integer.parseInt(json.substring(start, end));
+    private static Label statusDot(String text) {
+        Label l = new Label("  " + text);
+        l.setStyle("-fx-font-size: 12;");
+        return l;
     }
 
-    private static double extractJsonDouble(String json, String key) {
-        String search = "\"" + key + "\"";
-        int idx = json.indexOf(search);
-        if (idx < 0) throw new IllegalArgumentException("Key not found: " + key);
-        int colon = json.indexOf(':', idx);
-        int start = colon + 1;
-        while (start < json.length() && json.charAt(start) == ' ') start++;
-        int end = start;
-        while (end < json.length() && (Character.isDigit(json.charAt(end)) || json.charAt(end) == '-' || json.charAt(end) == '.')) end++;
-        return Double.parseDouble(json.substring(start, end));
+    private void resetSemaphore() {
+        paintDotInactive(dotPedidoRecibido);
+        paintDotInactive(dotRecogido);
+        paintDotInactive(dotListo);
     }
 
-    private static String extractJsonString(String json, String key) {
-        String search = "\"" + key + "\"";
-        int idx = json.indexOf(search);
-        if (idx < 0) throw new IllegalArgumentException("Key not found: " + key);
-        int q1 = json.indexOf('"', json.indexOf(':', idx) + 1);
-        int q2 = json.indexOf('"', q1 + 1);
-        return json.substring(q1 + 1, q2);
+    private void paintDotInactive(Label l) {
+        l.setStyle("-fx-font-size: 12; -fx-text-fill: #aaa; -fx-background-color: #f0f0f0; -fx-background-radius: 4; -fx-padding: 4 6 4 6;");
+    }
+
+    private void paintDotActive(Label l, String colorHex) {
+        l.setStyle("-fx-font-size: 12; -fx-text-fill: white; -fx-background-color: " + colorHex
+                + "; -fx-background-radius: 4; -fx-padding: 4 6 4 6; -fx-font-weight: bold;");
     }
 }
