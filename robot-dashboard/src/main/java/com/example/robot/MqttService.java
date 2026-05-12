@@ -9,15 +9,16 @@ import java.util.function.Consumer;
  * Manages the MQTT connection and subscriptions.
  *
  * Broker details (from project spec):
- *   IP:    127.0.0.1
- *   Port:  1884
+ *   IP:    192.168.0.108
+ *   Port:  1883
  *   Topic "map"             -> city map string, published every 60s
  *   Topic "robot/position"  -> JSON with robot position, published by robot
  *   Topic "robot/order/status" -> JSON with current order status
  */
 public class MqttService {
 
-    private static final String BROKER_URL   = "tcp://127.0.0.1:1884";
+//    private static final String BROKER_URL   = "tcp://127.0.0.1:1884";
+    private static final String BROKER_URL   = "tcp://192.168.0.108:1883";
     private static final String CLIENT_ID    = "RobotDashboard-JavaFX" + System.currentTimeMillis();
 
     public static final String TOPIC_MAP     = "map";

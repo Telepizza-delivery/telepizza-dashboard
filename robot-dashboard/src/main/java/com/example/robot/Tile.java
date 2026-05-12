@@ -42,7 +42,7 @@ public class Tile {
             case ROAD_RD   -> { connectsUp=false; connectsRight=true;  connectsDown=true;  connectsLeft=false; }
             case ROAD_DL   -> { connectsUp=false; connectsRight=false; connectsDown=true;  connectsLeft=true;  }
             case ROAD_LU   -> { connectsUp=true;  connectsRight=false; connectsDown=false; connectsLeft=true;  }
-            case ROAD_LUR  -> { connectsUp=false; connectsRight=true;  connectsDown=false; connectsLeft=true;  }
+            case ROAD_LUR  -> { connectsUp=true; connectsRight=true;  connectsDown=false; connectsLeft=true;  }
             case ROAD_URD  -> { connectsUp=true;  connectsRight=true;  connectsDown=true;  connectsLeft=false; }
             case ROAD_RDL  -> { connectsUp=false; connectsRight=true;  connectsDown=true;  connectsLeft=true;  }
             case ROAD_DLU  -> { connectsUp=true;  connectsRight=false; connectsDown=true;  connectsLeft=true;  }

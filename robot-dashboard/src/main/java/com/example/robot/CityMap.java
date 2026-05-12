@@ -44,7 +44,6 @@ public class CityMap {
 
     private boolean isPickupPoint(int row, int col) {
         Tile tile = grid[row][col];
-        System.out.println("Tile: " + tile.getCode() + " with row: " + row + " and column: " + col);
         int validConnections = 0;
 
         // UP: this tile connects up AND neighbour exists AND neighbour connects DOWN back
@@ -54,11 +53,9 @@ public class CityMap {
             validConnections++;
 
         // DOWN: this tile connects down AND neighbour exists AND neighbour connects UP back
-        System.out.println("Tile at row: " + row+1 + " and column: " + col + " has connectsup" + grid[row+1][col].connectsUp());
         if (tile.connectsDown() && row < rows-1
                 && !grid[row+1][col].isBuilding()
                 && grid[row+1][col].connectsUp())
-            System.out.println("Tile at row: " + row+1 + " and column: " + col + " has connectsup" + grid[row+1][col].connectsUp());
             validConnections++;
 
         // LEFT: this tile connects left AND neighbour exists AND neighbour connects RIGHT back

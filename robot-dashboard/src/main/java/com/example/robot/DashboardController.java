@@ -334,10 +334,10 @@ public class DashboardController {
         box.setAlignment(Pos.CENTER_LEFT);
         box.setPadding(new Insets(4, 0, 0, 0));
         box.getChildren().addAll(
-            legendDot("#e24b4a", "Edificio"),
-            legendDot("#e0f0ff", "Calle"),
-            legendDot("#185FA5", "Robot"),
-            legendDot("#f0f8e8", "Recogida/Entrega")
+                legendDot("#e24b4a", "Edificio"),
+                legendDot("#0e6e56", "Calle (verde)"),
+                legendDot("#1a5fa5", "Calle (azul)"),
+                legendDot("#FF6B00", "Robot")
         );
         return box;
     }
