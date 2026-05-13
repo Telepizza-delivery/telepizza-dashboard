@@ -1,9 +1,14 @@
 package com.example.robot;
 
-import org.eclipse.paho.client.mqttv3.*;
-import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
-
 import java.util.function.Consumer;
+
+import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
+import org.eclipse.paho.client.mqttv3.MqttCallback;
+import org.eclipse.paho.client.mqttv3.MqttClient;
+import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
+import org.eclipse.paho.client.mqttv3.MqttException;
+import org.eclipse.paho.client.mqttv3.MqttMessage;
+import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
 
 /**
  * Gestiona la conexion MQTT y las suscripciones del dashboard (Clarence).
@@ -17,7 +22,7 @@ import java.util.function.Consumer;
  */
 public class MqttService {
 
-    public static final String BROKER_URL = "tcp://192.168.1.122:1883";
+    public static final String BROKER_URL = "tcp://192.168.0.103:1883";
     private static final String CLIENT_ID = "RobotDashboard-JavaFX-" + System.currentTimeMillis();
 
     public static final String TOPIC_MAP       = "map";
