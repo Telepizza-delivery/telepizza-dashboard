@@ -1,7 +1,7 @@
 # Telepizza Dashboard — `Telepizza-dashboard`
 
 **Responsable:** Clarence
-**Asignatura:** Inteligencia Ambiental — Categoría C (seguimiento de calles)
+**Asignatura:** Inteligencia Ambiental — Rama `bajadaDificultad`: **Categoría A** (el robot navega por dead-reckoning sin tener en cuenta el mapa; esta app sigue funcionando igual porque la odometría es la lista de instrucciones completadas que llega por MQTT).
 
 Aplicación cliente del sistema Telepizza. Es una **app de escritorio JavaFX** que permite al operario lanzar pedidos al robot LEGO EV3, ver el mapa de la ciudad pintado en tiempo real, seguir la posición del robot a más de 1 Hz y consultar el estado de cada pedido (recogiendo, recogido, entregado). Convive con [`telepizza-mapa`](https://github.com/Telepizza-delivery/telepizza-mapa) (planificación de rutas, Joseju) y [`telepizza-ev3`](https://github.com/Telepizza-delivery/telepizza-ev3) (robot, Pablo).
 
