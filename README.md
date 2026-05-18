@@ -21,11 +21,11 @@ Aplicación cliente del sistema Telepizza. Es una **app de escritorio JavaFX** q
 
 ## 1. Qué hace la app
 
-- Recibe el mapa codificado por MQTT (`/map`) y lo **dibuja** en un canvas 5×7 con tiles PNG por tipo de bloque.
-- Marca con un borde amarillo y la letra "P" todos los **puntos válidos de recogida/entrega** y los autocompleta en los desplegables del formulario.
-- Permite **lanzar dos pedidos consecutivos**: cada uno se publica en `Equipo E/orders` con su id, recogida y entrega. La cola visual se actualiza al añadirlos.
+- Recibe el mapa codificado por MQTT (`map`) y lo **dibuja** en un canvas 5×7 con tiles PNG por tipo de bloque.
+- Marca con un borde amarillo y la letra "P" todos los **puntos válidos de recogida/entrega**.
+- Permite **crear pedidos mediante clic en el mapa**: el operario pulsa "Seleccionar recogida", hace clic sobre un punto válido (verde), luego "Seleccionar entrega" y clic sobre otro (azul), y finalmente "Añadir pedido". El pedido se publica en `Equipo E/orders` y aparece en la cola FIFO.
 - Recibe **odometría** (lista de instrucciones completadas) y **estado** (PEDIDO\_RECIBIDO / RECOGIDO / LISTO) del robot, y los muestra en tiempo real:
-  - El punto naranja del robot se mueve por el mapa.
+  - El círculo naranja del robot se mueve por el mapa.
   - El semáforo de tres luces refleja la fase actual.
   - El pedido pasa al historial al recibir `LISTO`.
 
@@ -59,19 +59,19 @@ Los 11 pasos del guión del equipo, vistos desde la app (★ = participación de
 ```
 Broker MQTT
     │
-    ├── /map  (cada 60 s)
-    │      └─► ★ Dibuja el mapa y rellena los desplegables
+    ├── map  (cada 60 s)
+    │      └─► ★ Dibuja el mapa y marca los puntos de recogida/entrega
     │
-    ├── /Equipo E/orders   ◄── ★ Publish al añadir un pedido
+    ├── Equipo E/orders   ◄── ★ Publish al confirmar un pedido
     │      └─► Joseju calcula la ruta y la encola
     │
-    ├── /Equipo E/instructions  (Joseju → Pablo)
+    ├── Equipo E/instructions  (Joseju → Pablo)
     │      └─► Pablo ejecuta
     │
-    ├── /Equipo E/odometry  ► ★ Lista de instrucciones completadas, cada 1 s
+    ├── Equipo E/odometry  ► ★ Lista de instrucciones completadas, cada 1 s
     │      └─► ★ RobotTracker recalcula la casilla y MapCanvas la pinta
     │
-    └── /Equipo E/status   ► ★ PEDIDO_RECIBIDO / RECOGIDO / LISTO
+    └── Equipo E/status   ► ★ PEDIDO_RECIBIDO / RECOGIDO / LISTO
            └─► ★ Semáforo de tres luces + historial al recibir LISTO
 ```
 
@@ -87,7 +87,7 @@ El robot es deliberadamente "tonto": no sabe en qué casilla está. Solo informa
 - **Orientación inicial:** se deduce del tipo de bloque de `(6, 0)`:
   - Si el bloque conecta hacia arriba (vertical) → mira al **norte**.
   - Si conecta hacia la derecha (horizontal) → mira al **este**.
-- A partir de ahí cada `MOVE` avanza una casilla, cada `TURN_*` rota el heading. `PICK_UP` y `DELIVER` no afectan a la posición.
+- A partir de ahí cada `MOVE` avanza una casilla, cada `TURN_LEFT`/`TURN_RIGHT` rota el heading 90°, y `TURN_BACK` rota 180°. `PICK_UP`, `DELIVER` y `STRAIGHT` no afectan a la posición.
 
 El cálculo es **idempotente**: cada vez que llega un nuevo mensaje de odometría se reaplica toda la lista desde el snapshot inicial, por lo que un mensaje duplicado o perdido no rompe el estado.
 
@@ -101,9 +101,14 @@ Al recibir `LISTO`, el tracker hace **snapshot** de la posición actual: el sigu
 
 | Ajuste | Valor |
 |---|---|
-| IP | `192.168.1.122` |
-| Puerto | `1883` |
-| Red WiFi | `domotica` |
+| IP | Variable de entorno `IP_ADDRESS_SERVER` (por defecto `192.168.137.2`) |
+| Puerto | Variable de entorno `PORT_SERVER` (por defecto `1883`) |
+
+La IP se puede sobreescribir en tiempo de ejecución sin recompilar:
+
+```bash
+IP_ADDRESS_SERVER=192.168.1.122 PORT_SERVER=1883 mvn javafx:run
+```
 
 ### Topics
 
@@ -112,7 +117,7 @@ Al recibir `LISTO`, el tracker hace **snapshot** de la posición actual: el sigu
 | `map` | servidor → app | Cadena de 70 caracteres (5×7 bloques × 2 dígitos) |
 | `Equipo E/orders` | app → mapa | `{"id":"ORD-xxx","pickup":[r,c],"delivery":[r,c]}` |
 | `Equipo E/odometry` | robot → app | `{"instructions":["MOVE","TURN_LEFT",...]}` (cada ≥1 Hz) |
-| `Equipo E/status` | robot → app | `PEDIDO_RECIBIDO` / `RECOGIDO` / `LISTO` (texto plano) |
+| `Equipo E/status` | robot → app | `PEDIDO_RECIBIDO` / `RECOGIDO` / `LISTO` (texto plano, JSON-string o JSON objeto) |
 
 La app **no** se suscribe a `Equipo E/instructions`: no necesita conocer la ruta prevista, le basta con casilla inicial + orientación inicial + instrucciones completadas (ver sección 4).
 
@@ -123,7 +128,7 @@ La app **no** se suscribe a `Equipo E/instructions`: no necesita conocer la ruta
 ### Requisitos
 - Java 21+ (LTS)
 - Maven 3.9+
-- Broker MQTT activo en `192.168.1.122:1883` (Mosquitto o equivalente).
+- Broker MQTT activo (Mosquitto o equivalente). La IP se configura con la variable de entorno `IP_ADDRESS_SERVER`.
 
 ### Build y ejecución
 
@@ -132,15 +137,16 @@ cd Telepizza-dashboard/robot-dashboard
 mvn javafx:run
 ```
 
-El plugin `javafx-maven-plugin` arranca directamente la clase `com.example.robot.RobotApp`. La conexión MQTT se establece automáticamente en `RobotApp.start()` después de mostrar la ventana.
+El plugin `javafx-maven-plugin` arranca directamente la clase `com.example.robot.RobotApp`. La conexión MQTT se establece automáticamente en `RobotApp.start()` después de mostrar la ventana. Al cerrar la ventana, `RobotApp.stop()` invoca `DashboardController.stopMqtt()` para cerrar la conexión limpiamente.
 
 ### Uso
 
-1. Esperar a que aparezca el mapa (al recibir el primer `/map`).
-2. Seleccionar punto de recogida y entrega en los desplegables (sólo se muestran las casillas válidas según el mapa).
-3. Pulsar **Añadir pedido**. Se publica en `Equipo E/orders` y el pedido aparece en la cola.
-4. Repetir para el segundo pedido (cola FIFO).
-5. Observar el robot moverse por el mapa, el semáforo cambiar de color y el historial llenarse al completar entregas.
+1. Esperar a que aparezca el mapa (al recibir el primer `map` MQTT). Los puntos válidos de recogida/entrega se marcan con borde amarillo y letra "P".
+2. Pulsar **Seleccionar recogida** y hacer clic sobre un punto válido en el mapa (se resalta en verde).
+3. Pulsar **Seleccionar entrega** y hacer clic sobre otro punto válido (se resalta en azul). Tras fijar la recogida, el modo avanza automáticamente a entrega.
+4. Pulsar **Añadir pedido**. Se publica en `Equipo E/orders` y el pedido aparece en la cola FIFO de la columna derecha.
+5. Repetir para pedidos adicionales (cola sin límite).
+6. Observar el robot moverse por el mapa, el semáforo cambiar de color y el historial llenarse al completar entregas.
 
 ---
 
@@ -148,10 +154,10 @@ El plugin `javafx-maven-plugin` arranca directamente la clase `com.example.robot
 
 Del enunciado del proyecto:
 
-- **R1 — Lanzar un pedido y poner otro en cola:** ✅ Formulario + cola FIFO en el panel derecho. Cualquier número de pedidos válidos se acepta.
+- **R1 — Lanzar un pedido y poner otro en cola:** ✅ Formulario con selección por clic en mapa + cola FIFO en el panel derecho. Cualquier número de pedidos válidos se acepta.
 - **R2 — Mostrar odometría a ≥ 1 Hz:** ✅ El robot publica cada 1 s y el tracker recalcula la casilla inmediatamente.
 - **R3 — Recoger en A y entregar en B dos veces:** ✅ Soportado a nivel de protocolo y UI; depende del subsistema robot.
 
 ---
 
-*Última actualización: 12-05-2026*
+*Última actualización: 18-05-2026*
