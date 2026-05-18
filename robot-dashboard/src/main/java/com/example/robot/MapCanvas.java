@@ -39,6 +39,12 @@ public class MapCanvas extends Canvas {
     private int robotRow = -1;
     private int robotCol = -1;
 
+    // Selected pickup/delivery tiles for map-click flow
+    private int selectedPickupRow   = -1;
+    private int selectedPickupCol   = -1;
+    private int selectedDeliveryRow = -1;
+    private int selectedDeliveryCol = -1;
+
     public MapCanvas(double width, double height) {
         super(width, height);
         loadTileImages();
@@ -69,6 +75,24 @@ public class MapCanvas extends Canvas {
     public void setRobotPosition(int row, int col) {
         this.robotRow = row;
         this.robotCol = col;
+        redraw();
+    }
+
+    public void setSelectedPickup(int row, int col) {
+        this.selectedPickupRow = row;
+        this.selectedPickupCol = col;
+        redraw();
+    }
+
+    public void setSelectedDelivery(int row, int col) {
+        this.selectedDeliveryRow = row;
+        this.selectedDeliveryCol = col;
+        redraw();
+    }
+
+    public void clearSelections() {
+        selectedPickupRow = selectedPickupCol = -1;
+        selectedDeliveryRow = selectedDeliveryCol = -1;
         redraw();
     }
 
@@ -130,6 +154,28 @@ public class MapCanvas extends Canvas {
                     gc.strokeRect(x, y, cellW - 2, cellH - 2);
                 }
             }
+        }
+
+        // Green overlay for selected pickup tile
+        if (selectedPickupRow >= 0 && selectedPickupCol >= 0) {
+            double x = MARGIN + selectedPickupCol * cellW + 1;
+            double y = MARGIN + selectedPickupRow * cellH + 1;
+            gc.setFill(Color.web("#00cc44", 0.40));
+            gc.fillRect(x, y, cellW - 2, cellH - 2);
+            gc.setStroke(Color.web("#00cc44"));
+            gc.setLineWidth(3.0);
+            gc.strokeRect(x, y, cellW - 2, cellH - 2);
+        }
+
+        // Blue overlay for selected delivery tile
+        if (selectedDeliveryRow >= 0 && selectedDeliveryCol >= 0) {
+            double x = MARGIN + selectedDeliveryCol * cellW + 1;
+            double y = MARGIN + selectedDeliveryRow * cellH + 1;
+            gc.setFill(Color.web("#1a5fa5", 0.40));
+            gc.fillRect(x, y, cellW - 2, cellH - 2);
+            gc.setStroke(Color.web("#1a5fa5"));
+            gc.setLineWidth(3.0);
+            gc.strokeRect(x, y, cellW - 2, cellH - 2);
         }
 
         // Column numbers along the top
