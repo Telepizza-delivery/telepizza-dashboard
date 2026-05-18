@@ -62,6 +62,7 @@ public class DashboardController {
 
     // Pedidos pendientes en orden FIFO (en paralelo a queueItems para tener el id).
     private final List<String> queuedIds = new ArrayList<>();
+    private final java.util.Map<String, String> orderLabels = new java.util.LinkedHashMap<>();
     private String activeOrderId = null;
 
     // Click-to-select state
@@ -210,6 +211,7 @@ public class DashboardController {
                         + ") -> (" + selDeliveryRow + "," + selDeliveryCol + ")");
                 System.out.println("Queue size: " + queueItems.size());
                 queuedIds.add(orderId);
+                orderLabels.put(orderId, "(" + selPickupRow + "," + selPickupCol + ") → (" + selDeliveryRow + "," + selDeliveryCol + ")");
                 // Reset selections
                 selPickupRow = selPickupCol = selDeliveryRow = selDeliveryCol = -1;
                 mapCanvas.clearSelections();
@@ -414,6 +416,10 @@ public class DashboardController {
                 resetSemaphore();
                 paintDotActive(dotPedidoRecibido, "#FFB300");
                 lblStatus.setText("Pedido " + activeOrderId + " en marcha");
+                String coords = orderLabels.getOrDefault(activeOrderId, "--");
+                String[] parts = coords.split("→");
+                lblPickup.setText("Recogida: " + (parts.length > 0 ? parts[0].trim() : "--"));
+                lblDelivery.setText("Entrega:  " + (parts.length > 1 ? parts[1].trim() : "--"));
             }
             case "RECOGIDO" -> {
                 paintDotActive(dotRecogido, "#1a5fa5");
@@ -423,6 +429,7 @@ public class DashboardController {
                 paintDotActive(dotListo, "#3B6D11");
                 if (activeOrderId != null) {
                     historyItems.add(0, activeOrderId + "  ENTREGADO");
+                    orderLabels.remove(activeOrderId);
                 }
                 if (tracker != null) tracker.commitSnapshot();
                 lblStatus.setText("Pedido " + activeOrderId + " entregado");

@@ -374,7 +374,7 @@ public enum Heading { N, E, S, W }
 - `MOVE`: avanza una casilla según `heading` (N → `row--`, S → `row++`, E → `col++`, W → `col--`).
 - `TURN_LEFT` / `TURN_RIGHT`: giro de 90°.
 - `TURN_BACK`: dos giros a la izquierda (180°).
-- `PICK_UP`, `DELIVER`, `STRAIGHT` y cualquier otro: ignorados, no afectan la posición.
+- `PICK_UP`, `DELIVER` y cualquier otro: ignorados, no afectan la posición.
 
 #### Método `commitSnapshot()`
 

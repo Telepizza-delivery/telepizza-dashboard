@@ -75,7 +75,7 @@ public class RobotTracker {
             case "TURN_LEFT"  -> heading = turnLeft(heading);
             case "TURN_RIGHT" -> heading = turnRight(heading);
             case "TURN_BACK"  -> { heading = turnLeft(heading); heading = turnLeft(heading); }
-            default -> { /* PICK_UP, DELIVER, STRAIGHT: no afectan posicion */ }
+            default -> { /* PICK_UP, DELIVER: no afectan posicion */ }
         }
     }
 

@@ -1,4 +1,4 @@
-# Telepizza Dashboard — `Telepizza-dashboard`
+# Telepizza Dashboard — `telepizza-dashboard`
 
 **Responsable:** Clarence
 **Asignatura:** Inteligencia Ambiental — Categoría C (seguimiento de calles)
@@ -34,7 +34,7 @@ Aplicación cliente del sistema Telepizza. Es una **app de escritorio JavaFX** q
 ## 2. Estructura del proyecto
 
 ```
-Telepizza-dashboard/
+telepizza-dashboard/
 └── robot-dashboard/
     ├── pom.xml                       # Build con Maven, JavaFX y Paho MQTT
     └── src/main/
@@ -87,7 +87,7 @@ El robot es deliberadamente "tonto": no sabe en qué casilla está. Solo informa
 - **Orientación inicial:** se deduce del tipo de bloque de `(6, 0)`:
   - Si el bloque conecta hacia arriba (vertical) → mira al **norte**.
   - Si conecta hacia la derecha (horizontal) → mira al **este**.
-- A partir de ahí cada `MOVE` avanza una casilla, cada `TURN_LEFT`/`TURN_RIGHT` rota el heading 90°, y `TURN_BACK` rota 180°. `PICK_UP`, `DELIVER` y `STRAIGHT` no afectan a la posición.
+- A partir de ahí cada `MOVE` avanza una casilla, cada `TURN_LEFT`/`TURN_RIGHT` rota el heading 90°, y `TURN_BACK` rota 180°. `PICK_UP` y `DELIVER`  no afectan a la posición.
 
 El cálculo es **idempotente**: cada vez que llega un nuevo mensaje de odometría se reaplica toda la lista desde el snapshot inicial, por lo que un mensaje duplicado o perdido no rompe el estado.
 
@@ -114,7 +114,7 @@ IP_ADDRESS_SERVER=192.168.1.122 PORT_SERVER=1883 mvn javafx:run
 
 | Topic | Dirección | Formato |
 |---|---|---|
-| `map` | servidor → app | Cadena de 70 caracteres (5×7 bloques × 2 dígitos) |
+| `map` | broker → app | Cadena de 70 caracteres (5×7 bloques × 2 dígitos) |
 | `Equipo E/orders` | app → mapa | `{"id":"ORD-xxx","pickup":[r,c],"delivery":[r,c]}` |
 | `Equipo E/odometry` | robot → app | `{"instructions":["MOVE","TURN_LEFT",...]}` (cada ≥1 Hz) |
 | `Equipo E/status` | robot → app | `PEDIDO_RECIBIDO` / `RECOGIDO` / `LISTO` (texto plano, JSON-string o JSON objeto) |
@@ -133,7 +133,7 @@ La app **no** se suscribe a `Equipo E/instructions`: no necesita conocer la ruta
 ### Build y ejecución
 
 ```bash
-cd Telepizza-dashboard/robot-dashboard
+cd telepizza-dashboard/robot-dashboard
 mvn javafx:run
 ```
 
