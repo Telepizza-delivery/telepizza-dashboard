@@ -7,30 +7,27 @@ import javafx.scene.layout.BorderPane;
 import javafx.stage.Stage;
 
 public class RobotApp extends Application {
-    private DashboardController controller;
 
     @Override
     public void start(Stage primaryStage) throws Exception {
-        controller = new DashboardController();  // assign to field, not local var
+        // Load FXML or build UI programmatically
+        DashboardController controller = new DashboardController();
         Scene scene = new Scene(controller.buildUI(), 900, 700);
+//        scene.getStylesheets().add(getClass().getResource("/style.css").toExternalForm());
 
         primaryStage.setTitle("Robot Delivery Dashboard");
         primaryStage.setScene(scene);
         primaryStage.show();
 
+        // Start MQTT connection after UI is ready
         controller.startMqtt();
     }
 
     @Override
     public void stop() throws Exception {
         super.stop();
-        if (controller != null) {
-            controller.stopMqtt();  // we'll add this to DashboardController
-        }
-        System.exit(0);
+        // MQTT client disconnects automatically via shutdown hook in MqttService
     }
-
-
 
     public static void main(String[] args) {
         launch(args);
